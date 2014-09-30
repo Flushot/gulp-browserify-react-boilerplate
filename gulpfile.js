@@ -58,7 +58,10 @@ var scriptPipeline = function(source, dest_file) {
 gulp.task('scripts', function() {
     // JS
     scriptPipeline(
-        gulp.src(['app/scripts/**/*.js']))
+        gulp.src([
+            'node_modules/es5-shim/es5-shim.js',
+            'app/scripts/**/*.js'
+        ]))
 
     // JSX
     scriptPipeline(
@@ -97,7 +100,7 @@ gulp.task('html', function() {
 gulp.task('test', ['scripts'], function() {
     gulp.src('tests')
         .pipe(jest({
-            scriptPreprocessor: 'tests/support/preprocessor.js',
+            //scriptPreprocessor: 'support/preprocessor.js',
             unmockedModulePathPatterns: [
                 'node_modules/react'
             ],
