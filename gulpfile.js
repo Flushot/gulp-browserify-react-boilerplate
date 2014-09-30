@@ -1,102 +1,133 @@
+'use strict';
+
+// Dependencies
 var gulp            = require('gulp'),
-    clean           = require('gulp-clean'),
-    browserify      = require('gulp-browserify'),
-    //browserify      = require('browserify'),
-    uglify          = require('gulp-uglify'),
-    cssmin          = require('gulp-cssmin'),
-    sourcemaps      = require('gulp-sourcemaps'),
-    concat          = require('gulp-concat'),
-    less            = require('gulp-less'),
-    refresh         = require('gulp-livereload'),
-    embedlr         = require('gulp-embedlr'),
     gutil           = require('gulp-util'),
-    react           = require('gulp-react'),
+    rimraf          = require('gulp-rimraf'),
+    ignore          = require('gulp-ignore'),
+    rename          = require('gulp-rename'),
+    sourcemaps      = require('gulp-sourcemaps'),
+    browserify      = require('browserify'),
+    watchify        = require('watchify'),
+    reactify        = require('reactify'),
+    es6ify          = require('es6ify'),
+    source          = require('vinyl-source-stream'),
+    uglify          = require('gulp-uglify'),
+    less            = require('gulp-less'),
+    cssmin          = require('gulp-cssmin'),
+    concat          = require('gulp-concat'),
+    livereload      = require('gulp-livereload'),
+    embedlr         = require('gulp-embedlr'),
     jest            = require('gulp-jest'),
-    coffee          = require('gulp-coffee'),
-    //es6_transpiler  = require('gulp-es6-module-transpiler'),
-    //es6ify          = require('es6ify'),
     path            = require('path'),
-    tiny_lr         = require('tiny-lr'),
+    exit            = require('exit'),
     express         = require('express');
 
-var lr_server,
-    lr_port = 35730,
-    web_port = 8888,
-    build_path = 'build';
-
-gulp.task('clean', function() {
-    gulp.src(build_path, {read: false})
-        .pipe(clean());
-});
-
-// Common stuff
-var scriptPipeline = function(source, dest_file) {
-    if (!dest_file)
-        dest_file = 'app.js';
-
-    var pipeline = source
-        .pipe(browserify({
-            insertGlobals: true,
-            debug: true //!gulp.env.production
-        }))
-        // .pipe(es6_transpiler({
-        //     type: 'amd',
-        //     prefix: 'example'
-        // }))
-        .pipe(sourcemaps.init())
-        .pipe(concat(dest_file))
-        .pipe(uglify())
-        .pipe(sourcemaps.write())
-        .pipe(gulp.dest(build_path + '/scripts'));
-
-    if (lr_server)
-        pipeline.pipe(refresh(lr_server));
-
-    return pipeline;
-};
-
-gulp.task('scripts', function() {
-    // JS
-    scriptPipeline(
-        gulp.src([
-            'node_modules/es5-shim/es5-shim.js',
-            'app/scripts/**/*.js'
-        ]))
-
-    // JSX
-    scriptPipeline(
-        gulp.src(['app/scripts/**/*.jsx'])
-            .pipe(react()));
-
-    // Coffeescript
-    scriptPipeline(
-        gulp.src(['app/scripts/**/*.coffee'])
-            //.pipe(sourcemaps.init())
-            .pipe(coffee({bare: true}).on('error', gutil.log)));
-            //.pipe(sourcemaps.write()));
-});
-
-gulp.task('styles', function() {
-    gulp.src([
+// Configuration
+var ports = {
+        http_server: 8888,
+        lr_server: 35730
+    },
+    paths = {
+        main: 'app/scripts/main.jsx',
+        scripts: [
+            'app/scripts/**/*.js',
+            'app/scripts/**/*.jsx'
+        ],
+        tests: [
+            'tests/**/*-test.js'
+        ],
+        html: [
+            'app/**/*.html'
+        ],
+        styles: [
             'node_modules/bootstrap/dist/css/bootstrap.css',
             'node_modules/bootstrap/dist/css/bootstrap-theme.css',
             'app/styles/**/*.less'
-        ])
-        //.pipe(sourcemaps.init())
-        .pipe(less())
+        ],
+        vendor: [
+            //'bower_components/react/react-with-addons.js',
+            'node_modules/es6ify/node_modules/traceur/bin/traceur-runtime.js',
+        ],
+        react: 'node_modules/react/react.js',
+        build: 'build'
+    };
+
+/**
+ * Clean up all build files.
+ */
+gulp.task('clean', function() {
+    gulp.src(paths.build, {read: false})
+        .pipe(rimraf());
+});
+
+/**
+ * Build all vendor files.
+ */
+gulp.task('vendor', function() {
+    return gulp.src(paths.vendor)
+        .pipe(gulp.dest(paths.build + '/vendor'));
+});
+
+/**
+ * Build all HTML files, embedding LiveReload JS code.
+ */
+gulp.task('html', function() {
+    return gulp.src(paths.html)
+        .pipe(embedlr({port: ports.lr_server}))
+        .pipe(gulp.dest(paths.build));
+});
+
+/**
+ * Build all LESS styles, concatenating and minifying.
+ */
+gulp.task('styles', function() {
+    gulp.src(paths.styles)
+        .pipe(sourcemaps.init())
+        .pipe(less()) // TODO: only apply to .less files
         .pipe(cssmin())
         .pipe(concat('app.css'))
-        //.pipe(sourcemaps.write())
-        .pipe(gulp.dest(build_path + '/styles'));
+        .pipe(sourcemaps.write())
+        .pipe(gulp.dest(paths.build + '/styles'));
 });
 
-gulp.task('html', function() {
-    gulp.src('app/*.html')
-        .pipe(embedlr())
-        .pipe(gulp.dest(build_path))
-        .pipe(refresh(lr_server));
+/**
+ * Build all JS/XJS scripts.
+ * Uses ECMAScript 6 transpiler.
+ */
+gulp.task('scripts', function() {
+    gutil.log('Starting browserify');
+    es6ify.traceurOverrides = {
+        experimental: true
+    };
+
+    //var bundler = (watch ? watchify : browserify)('./' + paths.main);
+    var bundler = watchify('./' + paths.main);
+    bundler.require('./' + paths.react);
+    bundler.transform(reactify);
+    bundler.transform(es6ify.configure(/.jsx/));
+
+    var rebundle = function() {
+        var stream = bundler.bundle({debug: true});
+
+        stream.on('error', function (err) {
+            console.error('Compilation error:', err);
+            exit(1);
+        });
+
+        stream = stream.pipe(source('./' + paths.main));
+        stream.pipe(rename('app.js'));
+
+        stream.pipe(gulp.dest(paths.build + '/bundle'));
+    };
+        
+    bundler.on('update', rebundle);
+    return rebundle();
 });
 
+/**
+ * Run all unit tests.
+ */
 gulp.task('test', ['scripts'], function() {
     gulp.src('tests')
         .pipe(jest({
@@ -116,32 +147,33 @@ gulp.task('test', ['scripts'], function() {
         }));
 });
 
-gulp.task('server', function() {
-    lr_server = tiny_lr();
-    lr_server.listen(lr_port, function() {
-        gutil.log('LiveReload listening on', lr_port);
-    });
-
+/**
+ * Run express web server.
+ */
+gulp.task('server', function(next) {
     var app = express();
-    app.use(express.static(path.resolve('./' + build_path)));
-    app.listen(web_port, function() {
-        gutil.log('HTTP listening on', web_port);
-    });
-
-    gulp.watch(build_path + '/**/*', function(evt) {
-        gutil.log(gutil.colors.cyan(evt.path), 'changed');
-        lr_server.changed({
-            body: {
-                files: [evt.path]
-            }
-        });
+    app.use(express.static(path.resolve('./' + paths.build)));
+    app.listen(ports.http_server, function() {
+        gutil.log('HTTP listening on', ports.http_server);
+        next();
     });
 });
 
-gulp.task('watch', function() {
-    gulp.watch('app/*.html', ['html']);
-    gulp.watch('app/scripts/**', ['scripts']);
-    gulp.watch('app/styles/**', ['styles']);
-});
+/**
+ * Default task.
+ */
+gulp.task('default', ['clean', 'scripts', 'vendor', 'styles', 'server'], function() {
+    gutil.log('Default routine');
+    var lr_server = livereload(ports.lr_server);
 
-gulp.task('default', ['scripts', 'html', 'styles', 'server', 'watch']);
+    // Init watch
+    gulp.start('html');
+    gulp.watch(paths.html, ['html']);
+
+    // Monitor changes
+    gulp.watch([paths.build + '/**/*'], function(evt) {
+        //gutil.log(gutil.color.cyan(evt.path), 'changed');
+        gutil.log(evt.path, 'changed');
+        lr_server.changed(evt.path);
+    });
+});
