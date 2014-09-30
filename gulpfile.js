@@ -74,7 +74,11 @@ gulp.task('scripts', function() {
 });
 
 gulp.task('styles', function() {
-    gulp.src('app/styles/**/*.less')
+    gulp.src([
+            'node_modules/bootstrap/dist/css/bootstrap.css',
+            'node_modules/bootstrap/dist/css/bootstrap-theme.css',
+            'app/styles/**/*.less'
+        ])
         //.pipe(sourcemaps.init())
         .pipe(less())
         .pipe(cssmin())
