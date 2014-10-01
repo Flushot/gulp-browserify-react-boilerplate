@@ -2,16 +2,16 @@ const React = require('react');
 import { TodoStore, getTodoState, TodoList } from './components/todos.jsx';
 
 
-var RootView = React.createClass({
-    getInitialState: function() {
+class _RootView {
+    getInitialState() {
         return getTodoState();
-    },
+    }
 
-    componentDidMount: function() {
+    componentDidMount() {
         TodoStore.addChangeListener(this._onChange);
-    },
+    }
 
-    render: function() {
+    render() {
         return (
             <div>
                 <nav className="navbar navbar-default" role="navigation">
@@ -70,21 +70,23 @@ var RootView = React.createClass({
                 </div>
             </div>
         );
-    },
+    }
 
-    componentWillUnmount: function() {
+    componentWillUnmount() {
         TodoStore.removeChangeListener(this._onChange);
-    },
+    }
 
-    _onChange: function() {
+    _onChange() {
         this.setState(getTodoState());
     }
-});
+}
+
+const RootView = React.createClass(_RootView.prototype);
 
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
     React.renderComponent(
-        new RootView(), 
+        <RootView/>,
         document.getElementById('root-view'));
 });

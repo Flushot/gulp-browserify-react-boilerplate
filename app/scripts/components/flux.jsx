@@ -1,4 +1,3 @@
-const Promise = require('es6-promise').Promise;
 const merge = require('react/lib/merge');
 
 
@@ -35,7 +34,7 @@ Dispatcher.prototype = merge(Dispatcher.prototype, {
         });
 
         // Dispatch to callbacks and resolve/reject promises.
-        _callbacks.forEach(function(callback, i) {
+        for (let [i, callback] of _callbacks.entries()) {
             // Callback can return an obj, to resolve, or a promise, to chain.
             // See waitFor() for why this might be useful.
             Promise.resolve(callback(payload))
@@ -46,7 +45,7 @@ Dispatcher.prototype = merge(Dispatcher.prototype, {
                     function() {
                         rejects[i](new Error('Dispatcher callback unsuccessful'));
                     });
-        });
+        }
 
         _promises = [];
     }

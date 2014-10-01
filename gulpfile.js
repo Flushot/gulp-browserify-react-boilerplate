@@ -3,6 +3,7 @@
 // Dependencies
 var gulp            = require('gulp'),
     gutil           = require('gulp-util'),
+    order           = require('gulp-order'),
     rimraf          = require('gulp-rimraf'),
     ignore          = require('gulp-ignore'),
     rename          = require('gulp-rename'),
@@ -25,32 +26,47 @@ var gulp            = require('gulp'),
 
 // Configuration
 var ports = {
+        // Web server
         http_server: 8888,
+
+        // LiveReload server
         lr_server: 35730
     },
     paths = {
+        // Main entrypoint
         main: 'app/scripts/main.jsx',
+
+        // Build target directory
+        build: 'build',
+
         scripts: [
             'app/scripts/**/*.js',
             'app/scripts/**/*.jsx'
         ],
+
+        // Jest cases
         tests: [
             'tests/**/*-test.js'
         ],
+
         html: [
             'app/**/*.html'
         ],
+
         styles: [
             'node_modules/bootstrap/dist/css/bootstrap.css',
             'node_modules/bootstrap/dist/css/bootstrap-theme.css',
             'app/styles/**/*.less'
         ],
+
+        // These scripts get concatenated and evaluated in global scope
         vendor: [
-            //'bower_components/react/react-with-addons.js',
+            //'bower_components/react/react-with-addons.js',            
             'node_modules/es6ify/node_modules/traceur/bin/traceur-runtime.js',
-        ],
-        react: 'node_modules/react/react.js',
-        build: 'build'
+            'node_modules/bootstrap/dist/js/bootstrap.js',
+            'node_modules/jquery/dist/jquery.js',
+            'node_modules/moment/moment.js'
+        ]
     };
 
 /**
@@ -65,17 +81,25 @@ gulp.task('clean', function() {
  * Build all vendor files.
  */
 gulp.task('vendor', function() {
-    return gulp.src(paths.vendor)
-        .pipe(gulp.dest(paths.build + '/vendor'));
+    return gulp
+        .src(paths.vendor)
+        //.pipe(order(paths.vendor))
+        //.src(paths.vendor)
+        .pipe(sourcemaps.init())
+        //.pipe(uglify())
+        .pipe(concat('vendor.js'))
+        .pipe(sourcemaps.write())
+        .pipe(gulp.dest(paths.build));
 });
 
 /**
  * Build all HTML files, embedding LiveReload JS code.
  */
 gulp.task('html', function() {
-    return gulp.src(paths.html)
+    gulp.src(paths.html)
         .pipe(embedlr({port: ports.lr_server}))
         .pipe(gulp.dest(paths.build));
+    gulp.watch(paths.html, ['html']);
 });
 
 /**
@@ -88,22 +112,22 @@ gulp.task('styles', function() {
         .pipe(cssmin())
         .pipe(concat('app.css'))
         .pipe(sourcemaps.write())
-        .pipe(gulp.dest(paths.build + '/styles'));
+        .pipe(gulp.dest(paths.build));
+    gulp.watch(paths.styles, ['styles']);
 });
 
 /**
  * Build all JS/XJS scripts.
  * Uses ECMAScript 6 transpiler.
  */
-gulp.task('scripts', function() {
-    gutil.log('Starting browserify');
+gulp.task('scripts', ['vendor'], function() {
     es6ify.traceurOverrides = {
         experimental: true
     };
 
     //var bundler = (watch ? watchify : browserify)('./' + paths.main);
     var bundler = watchify('./' + paths.main);
-    bundler.require('./' + paths.react);
+    bundler.require(require.resolve('react'));
     bundler.transform(reactify);
     bundler.transform(es6ify.configure(/.jsx/));
 
@@ -118,7 +142,7 @@ gulp.task('scripts', function() {
         stream = stream.pipe(source('./' + paths.main));
         stream.pipe(rename('app.js'));
 
-        stream.pipe(gulp.dest(paths.build + '/bundle'));
+        stream.pipe(gulp.dest(paths.build));
     };
         
     bundler.on('update', rebundle);
@@ -129,7 +153,8 @@ gulp.task('scripts', function() {
  * Run all unit tests.
  */
 gulp.task('test', ['scripts'], function() {
-    gulp.src('tests')
+    return gulp
+        .src('tests')
         .pipe(jest({
             //scriptPreprocessor: 'support/preprocessor.js',
             unmockedModulePathPatterns: [
@@ -150,11 +175,11 @@ gulp.task('test', ['scripts'], function() {
 /**
  * Run express web server.
  */
-gulp.task('server', function(next) {
+gulp.task('server', ['scripts', 'styles', 'html'], function(next) {
     var app = express();
     app.use(express.static(path.resolve('./' + paths.build)));
     app.listen(ports.http_server, function() {
-        gutil.log('HTTP listening on', ports.http_server);
+        gutil.log('HTTP server listening on:', ports.http_server);
         next();
     });
 });
@@ -162,13 +187,8 @@ gulp.task('server', function(next) {
 /**
  * Default task.
  */
-gulp.task('default', ['clean', 'scripts', 'vendor', 'styles', 'server'], function() {
-    gutil.log('Default routine');
+gulp.task('default', ['clean', 'server'], function() {
     var lr_server = livereload(ports.lr_server);
-
-    // Init watch
-    gulp.start('html');
-    gulp.watch(paths.html, ['html']);
 
     // Monitor changes
     gulp.watch([paths.build + '/**/*'], function(evt) {

@@ -1,34 +1,24 @@
 const React = require('react');
 const merge = require('react/lib/merge');
-const _ = require('underscore');
-
 const EventEmitter = require('events').EventEmitter;
-const Dispatcher = require('./flux.jsx').Dispatcher;
+const _ = require('underscore');
+import { Dispatcher } from './flux.jsx';
 
 
-var _todos = {
-    'foo': {
-        id: 'foo',
-        text: 'Finish this app',
-        complete: false
-    },
-    'bar': {
-        id: 'bar',
-        text: 'Something else',
-        complete: true
-    }
-};
+var _todos = {};
+var _last_id_idx = 0;
 
 /**
  * Create a TODO item.
  * @param {string} text The content of the TODO
  */
-var _create = function(text) {
+var create = function(text) {
     // Using the current timestamp in place of a real id.
-    var id = Date.now();
-    _todos[id] = {
+    var id = 'todo_' + ++_last_id_idx;
+    return _todos[id] = {
         id: id,
         complete: false,
+        created_at: Date.now(),
         text: text
     };
 };
@@ -37,12 +27,18 @@ var _create = function(text) {
  * Delete a TODO item.
  * @param {string} id
  */
-var _destroy = function(id) {
+var destroy = function(id) {
     delete _todos[id];
 };
 
 var CHANGE_EVENT = 'change';
 
+// Sample data
+create('Finish this app');
+create('Something else');
+create('Blah');
+
+console.log('TODOS: %o', _todos);
 
 var AppDispatcher = merge(Dispatcher.prototype, {
     /**
@@ -117,13 +113,13 @@ export var TodoStore = merge(EventEmitter.prototype, {
             case TodoConstants.TODO_CREATE:
                 text = action.text.trim();
                 if (text !== '') {
-                    _create(text);
+                    create(text);
                     TodoStore.emitChange();
                 }
                 break;
 
             case TodoConstants.TODO_DESTROY:
-                _destroy(action.id);
+                destroy(action.id);
                 TodoStore.emitChange();
                 break;
 
@@ -135,13 +131,11 @@ export var TodoStore = merge(EventEmitter.prototype, {
     })
 });
 
-
 export var getTodoState = function() {
     return {
         allTodos: TodoStore.getAll()
     };
 };
-
 
 export var TodoList = React.createClass({
     propTypes: {
@@ -150,15 +144,19 @@ export var TodoList = React.createClass({
 
     render: function() {
         return (
-            <ul>
-                {_.map(this.props.allTodos, function(todoItem) {
-                    return (<TodoItem todo={todoItem} />);
-                })}
-            </ul>
+            <div className="panel panel-default">
+                <div className="panel-heading">TODO List ({Object.keys(this.props.allTodos).length})</div>
+                <div className="panel-body">
+                    <ul>
+                        {_.map(this.props.allTodos, todoItem => {
+                            return <TodoItem todo={todoItem}/>;
+                        })}
+                    </ul>
+                </div>
+            </div>
         );
     }
 });
-
 
 export var TodoItem = React.createClass({
     propTypes: {
@@ -168,9 +166,9 @@ export var TodoItem = React.createClass({
     render: function() {
         var todo = this.props.todo;
         return (
-            <li key={todo.id}>
+            <li key={todo.id} style={{listStyle: 'none'}}>
                 <label>{todo.text}</label>
-                <a href="#" onClick={this._onDestroyClicked}>&times;</a>
+                <a href="#" onClick={this._onDestroyClicked}> &times;</a>
             </li>
         );
     },
