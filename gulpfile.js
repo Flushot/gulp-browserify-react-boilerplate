@@ -187,7 +187,7 @@ gulp.task('server', ['scripts', 'styles', 'html'], function(next) {
 /**
  * Default task.
  */
-gulp.task('default', ['clean', 'server'], function() {
+gulp.task('default', ['server'], function() {
     var lr_server = livereload(ports.lr_server);
 
     // Monitor changes
