@@ -2,27 +2,26 @@
 
 // Dependencies
 var gulp            = require('gulp'),
-    gutil           = require('gulp-util'),
-    order           = require('gulp-order'),
-    rimraf          = require('gulp-rimraf'),
-    ignore          = require('gulp-ignore'),
+    concat          = require('gulp-concat-sourcemap'),
+    cssmin          = require('gulp-cssmin'),
+    embedlr         = require('gulp-embedlr'),
+    gfilter         = require('gulp-filter'),
+    jest            = require('gulp-jest'),
+    less            = require('gulp-less'),
+    livereload      = require('gulp-livereload'),
     rename          = require('gulp-rename'),
+    rimraf          = require('gulp-rimraf'),
     sourcemaps      = require('gulp-sourcemaps'),
+    uglify          = require('gulp-uglify'),
+    gutil           = require('gulp-util'),
     browserify      = require('browserify'),
-    watchify        = require('watchify'),
+    shim            = require('browserify-shim'),
     reactify        = require('reactify'),
     es6ify          = require('es6ify'),
-    source          = require('vinyl-source-stream'),
-    uglify          = require('gulp-uglify'),
-    less            = require('gulp-less'),
-    cssmin          = require('gulp-cssmin'),
-    concat          = require('gulp-concat'),
-    livereload      = require('gulp-livereload'),
-    embedlr         = require('gulp-embedlr'),
-    jest            = require('gulp-jest'),
     path            = require('path'),
     exit            = require('exit'),
-    express         = require('express');
+    express         = require('express'),
+    source          = require('vinyl-source-stream');
 
 // Configuration
 var ports = {
@@ -55,7 +54,8 @@ var ports = {
 
         styles: [
             'node_modules/bootstrap/dist/css/bootstrap.css',
-            'node_modules/bootstrap/dist/css/bootstrap-theme.css',
+            //'node_modules/bootstrap/dist/css/bootstrap-theme.css',
+            'app/styles/**/*.css',
             'app/styles/**/*.less'
         ],
 
@@ -63,9 +63,10 @@ var ports = {
         vendor: [
             //'bower_components/react/react-with-addons.js',            
             'node_modules/es6ify/node_modules/traceur/bin/traceur-runtime.js',
-            'node_modules/bootstrap/dist/js/bootstrap.js',
-            'node_modules/jquery/dist/jquery.js',
-            'node_modules/moment/moment.js'
+            //'node_modules/jquery/dist/jquery.js',
+            //'node_modules/bootstrap/dist/js/bootstrap.js',
+            //'node_modules/moment/moment.js'
+            //'vendor/**/*.js'
         ]
     };
 
@@ -83,12 +84,9 @@ gulp.task('clean', function() {
 gulp.task('vendor', function() {
     return gulp
         .src(paths.vendor)
-        //.pipe(order(paths.vendor))
         //.src(paths.vendor)
-        .pipe(sourcemaps.init())
         //.pipe(uglify())
         .pipe(concat('vendor.js'))
-        .pipe(sourcemaps.write())
         .pipe(gulp.dest(paths.build));
 });
 
@@ -99,6 +97,7 @@ gulp.task('html', function() {
     gulp.src(paths.html)
         .pipe(embedlr({port: ports.lr_server}))
         .pipe(gulp.dest(paths.build));
+
     gulp.watch(paths.html, ['html']);
 });
 
@@ -106,13 +105,17 @@ gulp.task('html', function() {
  * Build all LESS styles, concatenating and minifying.
  */
 gulp.task('styles', function() {
+    var lessFilter = gfilter(['*.less']);
     gulp.src(paths.styles)
-        .pipe(sourcemaps.init())
-        .pipe(less()) // TODO: only apply to .less files
-        .pipe(cssmin())
+        //.pipe(sourcemaps.init())
+        .pipe(lessFilter)
+            .pipe(less({path: './app/styles'}))
+        .pipe(lessFilter.restore())
+        //.pipe(cssmin())
         .pipe(concat('app.css'))
-        .pipe(sourcemaps.write())
+        //.pipe(sourcemaps.write())
         .pipe(gulp.dest(paths.build));
+
     gulp.watch(paths.styles, ['styles']);
 });
 
@@ -125,28 +128,22 @@ gulp.task('scripts', ['vendor'], function() {
         experimental: true
     };
 
-    //var bundler = (watch ? watchify : browserify)('./' + paths.main);
-    var bundler = watchify('./' + paths.main);
-    bundler.require(require.resolve('react'));
-    bundler.transform(reactify);
-    bundler.transform(es6ify.configure(/.jsx/));
+    var bundler = browserify('./' + paths.main, {debug: true})
+            .require(require.resolve('react'))
+            .transform(reactify)
+            .transform(es6ify.configure(/.jsx/));
 
-    var rebundle = function() {
-        var stream = bundler.bundle({debug: true});
+    var stream = bundler.bundle();
+    stream.on('error', function (err) {
+        console.error('Compilation error:', err);
+        exit(1);
+    });
 
-        stream.on('error', function (err) {
-            console.error('Compilation error:', err);
-            exit(1);
-        });
-
-        stream = stream.pipe(source('./' + paths.main));
-        stream.pipe(rename('app.js'));
-
-        stream.pipe(gulp.dest(paths.build));
-    };
-        
-    bundler.on('update', rebundle);
-    return rebundle();
+    stream.pipe(source('./' + paths.main))
+          .pipe(rename('app.js'))
+          .pipe(gulp.dest(paths.build));
+    
+    gulp.watch(paths.scripts, ['scripts']);
 });
 
 /**
@@ -192,7 +189,6 @@ gulp.task('default', ['server'], function() {
 
     // Monitor changes
     gulp.watch([paths.build + '/**/*'], function(evt) {
-        //gutil.log(gutil.color.cyan(evt.path), 'changed');
         gutil.log(evt.path, 'changed');
         lr_server.changed(evt.path);
     });
